@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# ring.py
+
 from util import *
 from sumo_util import *
 
