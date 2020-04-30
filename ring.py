@@ -67,9 +67,14 @@ class RingEnv:
     def init_vehicles(self) -> None:
         c = self.c
 
-        curr = 0
+        curr: int = 0
         interval = c.circumference / c.n_veh
         self.veh_ids: List[str] = []
+        assert c.n_veh % 2 == 0, f"{c.n_veh} (c.n_veh) must be even since half start on left and half start on right"
+        # Vehicles have to follow a route, which consists of a sequence
+        # of edges.
+        # For example, route_right ("right left right") just says the
+        # vehicle will start on edge right.
         for route, offset in ('route_right', 0), ('route_left', c.circumference / 2):
             for i in range(c.n_veh // 2):
                 veh_id = f'v{curr}'
@@ -81,6 +86,7 @@ class RingEnv:
                 self.tc.vehicle.setSpeedMode(veh_id, SPEED_MODE.aggressive)
                 curr += 1
                 self.veh_ids.append(veh_id)
+        assert curr == c.n_veh
 
     def step(self) -> None:
         c = self.c
