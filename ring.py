@@ -3,10 +3,56 @@
 #
 # ring.py
 
-from typing import List
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Dict, List
 
 from util import *
 from sumo_util import *
+
+@dataclass
+class IDMParams:
+    a: float
+    b: float
+    s0: float
+    tau: float
+    v0: float
+    delta: float
+
+class ControlLogic(ABC):
+    """
+    A block of logic that computes accelerations.
+    """
+    def __init__(self) -> None:
+        self.steps: int = 0
+
+    @abstractmethod
+    def step(self,
+        distance_to_next_vehicle: float,
+        this_speed: float,
+        next_speed: float
+    ) -> float:
+        """
+        Run a step of this control logic and return acceleration of the
+        car as a float.
+        """
+        pass
+
+class CustomIDM(ControlLogic):
+    def __init__(self, params: IDMParams) -> None:
+        super().__init__()
+        self.params: IDMParams = params
+
+    def step(self,
+        distance_to_next_vehicle: float,
+        this_speed: float,
+        next_speed: float
+    ) -> float:
+        v_diff: float = this_speed - next_speed
+        s = distance_to_next_vehicle
+
+        s_star = self.params.s0 + this_speed * self.params.tau + this_speed * v_diff / (2 * np.sqrt(self.params.a * self.params.b))
+        return self.params.a * (1 - (this_speed / self.params.v0) ** self.params.delta - (s_star / s) ** 2)
 
 class RingEnv:
     def __init__(self, c) -> None:
@@ -53,13 +99,13 @@ class RingEnv:
 
         # IDM params
         v_params = {**IDM, **LC2013, **dict(accel=1, decel=1.5, minGap=2)}
-        c.var(
+        self.idm_params: IDMParams = IDMParams(
             a=v_params['accel'],
             b=v_params['decel'],
             s0=v_params['minGap'],
-            idm_tau=v_params['tau'],
+            tau=v_params['tau'],
             v0=v_params['maxSpeed'],
-            delta=4
+            delta=4.0
         )
 
         additional = E('additional',
@@ -77,6 +123,7 @@ class RingEnv:
         curr: int = 0
         interval = c.circumference / c.n_veh
         self.veh_ids: List[str] = []
+        self.veh_controllers: Dict[str, ControlLogic] = {}
         assert c.n_veh % 2 == 0, f"{c.n_veh} (c.n_veh) must be even since half start on left and half start on right"
         # Vehicles have to follow a route, which consists of a sequence
         # of edges.
@@ -93,6 +140,7 @@ class RingEnv:
                 self.tc.vehicle.setSpeedMode(veh_id, SPEED_MODE.aggressive)
                 curr += 1
                 self.veh_ids.append(veh_id)
+                self.veh_controllers[veh_id] = CustomIDM(self.idm_params)
         assert curr == c.n_veh
 
     def step(self) -> None:
@@ -112,14 +160,21 @@ class RingEnv:
 
         if c.custom_update:
             for veh in vehs:
+                # Find vehicle ahead of this one
                 next_veh = vehs[(veh.i + 1) % len(vehs)]
 
-                s = next_veh.pos - veh.pos - veh.length
-                if s < 0:
-                    s += c.circumference
-                v_diff = veh.speed - next_veh.speed
-                s_star = c.s0 + veh.speed * c.idm_tau + veh.speed * v_diff / (2 * np.sqrt(c.a * c.b))
-                veh.accel = c.a * (1 - (veh.speed / c.v0) ** c.delta - (s_star / s) ** 2)
+                # Calculate the distance to the next vehicle
+                distance_to_next_vehicle: float = next_veh.pos - veh.pos - veh.length
+                if distance_to_next_vehicle < 0:
+                    distance_to_next_vehicle += c.circumference
+
+                # Compute output acceleration
+                veh.accel = self.veh_controllers[veh.id].step(
+                    distance_to_next_vehicle=distance_to_next_vehicle,
+                    this_speed=veh.speed,
+                    next_speed=next_veh.speed
+                )
+
                 # verified that setSpeed sets speed immediately, slowDown linearly decelerates vehicle over duration
                 vehicle.slowDown(veh.id, max(0, veh.speed + c.sim_step * veh.accel), duration=c.sim_step)
 
