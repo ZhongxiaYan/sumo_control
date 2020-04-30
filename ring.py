@@ -27,8 +27,25 @@ class ControlLogic(ABC):
     def __init__(self) -> None:
         self.steps: int = 0
 
-    @abstractmethod
     def step(self,
+        distance_to_next_vehicle: float,
+        this_speed: float,
+        next_speed: float
+    ) -> float:
+        """
+        Wraps step_logic with some additional logic, like incrementing
+        the step counter.
+        """
+        return_value = self.step_logic(
+            distance_to_next_vehicle=distance_to_next_vehicle,
+            this_speed=this_speed,
+            next_speed=next_speed
+        )
+        self.steps += 1
+        return return_value
+
+    @abstractmethod
+    def step_logic(self,
         distance_to_next_vehicle: float,
         this_speed: float,
         next_speed: float
@@ -44,7 +61,7 @@ class CustomIDM(ControlLogic):
         super().__init__()
         self.params: IDMParams = params
 
-    def step(self,
+    def step_logic(self,
         distance_to_next_vehicle: float,
         this_speed: float,
         next_speed: float
@@ -56,27 +73,32 @@ class CustomIDM(ControlLogic):
         return self.params.a * (1 - (this_speed / self.params.v0) ** self.params.delta - (s_star / s) ** 2)
 
 class PID(ControlLogic):
-    def __init__(self, target_distance: float, Kp_plus: float, Kp_minus: float) -> None:
+    def __init__(self, target_distance: float, Kp_plus: float, Kp_minus: float, Ki: float = 0.0) -> None:
         super().__init__()
         self.target_distance = target_distance
-        self.error_accum = collections.deque(maxlen=50)
+        self.error_accum: collections.deque = collections.deque(maxlen=50)
         self.error_accum.append(0.0)
         self.Kp_plus = Kp_plus
         self.Kp_minus = Kp_minus
+        self.Ki = Ki
 
-    def step(self,
+    def step_logic(self,
         distance_to_next_vehicle: float,
         this_speed: float,
         next_speed: float
     ) -> float:
         error: float = distance_to_next_vehicle - self.target_distance
         self.error_accum.append(error)
-        # ~ print(f"error = {error}")
-        # ~ print(f"error_accum_sum = {sum(self.error_accum)}")
+        print(f"error = {error}")
+        print(f"error_accum_sum = {sum(self.error_accum)}")
+        if self.steps % 150 == 0:
+            self.error_accum.clear()
+        p_term: float
         if error > 0:
-            return self.Kp_plus * error
+            p_term = self.Kp_plus * error
         else:
-            return self.Kp_minus * error
+            p_term = self.Kp_minus * error
+        return p_term + self.Ki * sum(self.error_accum)
 
 class RingEnv:
     def __init__(self, c) -> None:
