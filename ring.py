@@ -50,7 +50,7 @@ class RingEnv:
             a=v_params['accel'],
             b=v_params['decel'],
             s0=v_params['minGap'],
-            T=v_params['tau'],
+            idm_tau=v_params['tau'],
             v0=v_params['maxSpeed'],
             delta=4
         )
@@ -111,7 +111,7 @@ class RingEnv:
                 if s < 0:
                     s += c.circumference
                 v_diff = veh.speed - next_veh.speed
-                s_star = c.s0 + veh.speed * c.T + veh.speed * v_diff / (2 * np.sqrt(c.a * c.b))
+                s_star = c.s0 + veh.speed * c.idm_tau + veh.speed * v_diff / (2 * np.sqrt(c.a * c.b))
                 veh.accel = c.a * (1 - (veh.speed / c.v0) ** c.delta - (s_star / s) ** 2)
                 # verified that setSpeed sets speed immediately, slowDown linearly decelerates vehicle over duration
                 vehicle.slowDown(veh.id, max(0, veh.speed + c.sim_step * veh.accel), duration=c.sim_step)
