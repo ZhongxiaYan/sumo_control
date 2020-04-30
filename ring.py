@@ -3,11 +3,13 @@
 #
 # ring.py
 
+from typing import List
+
 from util import *
 from sumo_util import *
 
 class RingEnv:
-    def __init__(self, c):
+    def __init__(self, c) -> None:
         self.c = c.setdefaults(redef_sumo=False)
         self.sumo_def = sumo_def = SumoDef(c)
 
@@ -62,12 +64,12 @@ class RingEnv:
         args = {'no-internal-links': True}
         return self.sumo_def.save(nodes, edges, connections, additional, net_args=args, sumo_args=args)
 
-    def init_vehicles(self):
+    def init_vehicles(self) -> None:
         c = self.c
 
         curr = 0
         interval = c.circumference / c.n_veh
-        self.veh_ids = []
+        self.veh_ids: List[str] = []
         for route, offset in ('route_right', 0), ('route_left', c.circumference / 2):
             for i in range(c.n_veh // 2):
                 veh_id = f'v{curr}'
@@ -80,7 +82,9 @@ class RingEnv:
                 curr += 1
                 self.veh_ids.append(veh_id)
 
-    def step(self):
+    def step(self) -> None:
+        c = self.c
+
         vehicle = self.tc.vehicle
         vehs = [Namespace(
             i=i,
