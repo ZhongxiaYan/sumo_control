@@ -17,10 +17,17 @@ class RingEnv:
         kwargs['net'] = sumo_def.generate_net(**kwargs)
         sumo_def.sumo_cmd = sumo_def.generate_sumo(**kwargs)
 
+        # Start traci
         self.tc = sumo_def.start_sumo()
 
+        # Number of steps already executed
+        self.steps: int = 0
+        # self.tc.simulation.getCurrentTime() is useful for getting current simulation time
+
         self.init_vehicles()
+
         self.tc.simulationStep()
+        self.steps += 1
 
     def def_sumo(self):
         c = self.c
@@ -122,6 +129,7 @@ class RingEnv:
         print('mean %.5g min %.5g max %.5g' % (np.mean(speeds), np.min(speeds), np.max(speeds)))
         print()
         self.tc.simulationStep()
+        self.steps += 1
 
         # if c.custom_update:
         #     for veh in vehs:
