@@ -6,9 +6,17 @@ from traci.exceptions import FatalTraCIError, TraCIException
 import bisect
 import warnings
 
+from typing import Any
+
 from u import *
 
-def val_to_str(x):
+def val_to_str(x: Any) -> str:
+    """
+    If `x` is a boolean, then return "true" or "false".
+    Otherwise, use the default conversion.
+
+    :param x: Object to convert
+    """
     return str(x).lower() if type(x) is bool else str(x)
 
 def dict_kv_to_str(x):
