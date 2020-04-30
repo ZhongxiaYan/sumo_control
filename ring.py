@@ -4,6 +4,7 @@
 # ring.py
 
 from abc import ABC, abstractmethod
+import collections
 from dataclasses import dataclass
 from typing import Dict, List
 
@@ -55,10 +56,13 @@ class CustomIDM(ControlLogic):
         return self.params.a * (1 - (this_speed / self.params.v0) ** self.params.delta - (s_star / s) ** 2)
 
 class PID(ControlLogic):
-    def __init__(self, target_distance: float, Kp: float) -> None:
+    def __init__(self, target_distance: float, Kp_plus: float, Kp_minus: float) -> None:
         super().__init__()
         self.target_distance = target_distance
-        self.Kp = Kp
+        self.error_accum = collections.deque(maxlen=50)
+        self.error_accum.append(0.0)
+        self.Kp_plus = Kp_plus
+        self.Kp_minus = Kp_minus
 
     def step(self,
         distance_to_next_vehicle: float,
@@ -66,8 +70,13 @@ class PID(ControlLogic):
         next_speed: float
     ) -> float:
         error: float = distance_to_next_vehicle - self.target_distance
-        print(f"error = {error}")
-        return self.Kp * error
+        self.error_accum.append(error)
+        # ~ print(f"error = {error}")
+        # ~ print(f"error_accum_sum = {sum(self.error_accum)}")
+        if error > 0:
+            return self.Kp_plus * error
+        else:
+            return self.Kp_minus * error
 
 class RingEnv:
     def __init__(self, c) -> None:
