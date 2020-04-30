@@ -54,6 +54,21 @@ class CustomIDM(ControlLogic):
         s_star = self.params.s0 + this_speed * self.params.tau + this_speed * v_diff / (2 * np.sqrt(self.params.a * self.params.b))
         return self.params.a * (1 - (this_speed / self.params.v0) ** self.params.delta - (s_star / s) ** 2)
 
+class PID(ControlLogic):
+    def __init__(self, target_distance: float, Kp: float) -> None:
+        super().__init__()
+        self.target_distance = target_distance
+        self.Kp = Kp
+
+    def step(self,
+        distance_to_next_vehicle: float,
+        this_speed: float,
+        next_speed: float
+    ) -> float:
+        error: float = distance_to_next_vehicle - self.target_distance
+        print(f"error = {error}")
+        return self.Kp * error
+
 class RingEnv:
     def __init__(self, c) -> None:
         self.c = c.setdefaults(redef_sumo=False)
