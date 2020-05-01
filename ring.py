@@ -6,7 +6,7 @@
 from abc import ABC, abstractmethod
 import collections
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from util import *
 from sumo_util import *
@@ -89,8 +89,8 @@ class PID(ControlLogic):
     ) -> float:
         error: float = distance_to_next_vehicle - self.target_distance
         self.error_accum.append(error)
-        # ~ print(f"error = {error}")
-        # ~ print(f"error_accum_sum = {sum(self.error_accum)}")
+        print(f"error = {error}")
+        print(f"error_accum_sum = {sum(self.error_accum)}")
         # ~ if self.steps % 75 == 0:
             # ~ self.error_accum.clear()
         p_term: float
@@ -158,13 +158,21 @@ class RingEnv:
         args = {'no-internal-links': True}
         return self.sumo_def.save(nodes, edges, connections, additional, net_args=args, sumo_args=args)
 
-    def init_vehicles(self) -> None:
+    def init_vehicles(self, highlights: Set[int], custom_controllers: Dict[int, ControlLogic]) -> None:
+        """
+        Creates vehicles numbered from 0 to (n_veh-1).
+        :param highlights: Vehicle numbers to highlight
+        :param custom_controllers: Vehicles that should use a custom controller.
+        """
         c = self.c
 
         curr: int = 0
         interval = c.circumference / c.n_veh
         self.veh_ids: List[str] = []
+        # Map of vehicles to their controllers
         self.veh_controllers: Dict[str, ControlLogic] = {}
+        # Set of vehicles to highlight
+        self.veh_highlights: Set[str] = set()
         assert c.n_veh % 2 == 0, f"{c.n_veh} (c.n_veh) must be even since half start on left and half start on right"
         # Vehicles have to follow a route, which consists of a sequence
         # of edges.
@@ -173,15 +181,24 @@ class RingEnv:
         for route, offset in ('route_right', 0), ('route_left', c.circumference / 2):
             for i in range(c.n_veh // 2):
                 veh_id = f'v{curr}'
+
                 self.tc.vehicle.add(veh_id, f'{route}',
                     typeID='idm',
                     departPos=str(max(0, curr * interval - offset + np.random.normal(0, 1))),
                     departSpeed='0')
+
                 # disable sumo checks
                 self.tc.vehicle.setSpeedMode(veh_id, SPEED_MODE.aggressive)
+
                 curr += 1
                 self.veh_ids.append(veh_id)
-                self.veh_controllers[veh_id] = CustomIDM(self.idm_params)
+                if curr in highlights:
+                    self.veh_highlights.add(veh_id)
+
+                if curr in custom_controllers:
+                    self.veh_controllers[veh_id] = custom_controllers[curr]
+                else:
+                    self.veh_controllers[veh_id] = CustomIDM(self.idm_params)
         assert curr == c.n_veh
 
         # TODO: is this initial stepping necessary?
@@ -221,6 +238,10 @@ class RingEnv:
                     next_speed=next_veh.speed
                 )
 
+                # Highlight this vehicle if needed
+                if veh.id in self.veh_highlights:
+                    self.tc.vehicle.highlight(veh.id, color=(255, 111, 0, 200), size=4)
+
                 # verified that setSpeed sets speed immediately, slowDown linearly decelerates vehicle over duration
                 vehicle.slowDown(veh.id, max(0, veh.speed + c.sim_step * veh.accel), duration=c.sim_step)
 
@@ -232,27 +253,61 @@ class RingEnv:
         self.tc.simulationStep()
         self.steps += 1
 
-        # if c.custom_update:
-        #     for veh in vehs:
-        #         custom_pos = veh.pos + c.sim_step * (veh.speed + c.sim_step * veh.accel * 0.5)
-        #         if custom_pos >= c.circumference:
-        #             custom_pos -= c.circumference
-        #         sumo_pos = vehicle.getLanePosition(veh.id) + (vehicle.getRoadID(veh.id) == 'left') * c.circumference / 2
-        #         print(veh.pos, custom_pos, sumo_pos)
-
-if __name__ == '__main__':
+def pid_short_leash() -> None:
+    """
+    Run a PID loop, following closely.
+    """
     c = Namespace(
         res=Path('tmp'),
         horizon=3000,
 
-        n_veh=22,
+        n_veh=10,
         circumference=250,
-        sim_step=1,
+        sim_step=0.25,
         render=True,
 
         custom_update=True
     ).var(**from_args())
     env = RingEnv(c)
-    env.init_vehicles()
+    env.init_vehicles(
+        highlights={5},
+        # Close following requires very high braking forces
+        custom_controllers={5: PID(9.0,
+            Kp_plus=1.8, Kp_minus=26.5,
+            # In close following, for some reason, the integral term
+            # just builds up and up and causes wild instability later.
+            Ki=0.0
+        )}
+    )
     for t in range(c.horizon):
         env.step()
+
+def pid_long_leash() -> None:
+    """
+    Run a PID loop, following with longer distance.
+    """
+    c = Namespace(
+        res=Path('tmp'),
+        horizon=3000,
+
+        n_veh=10,
+        circumference=250,
+        sim_step=0.25,
+        render=True,
+
+        custom_update=True
+    ).var(**from_args())
+    env = RingEnv(c)
+    env.init_vehicles(
+        highlights={5},
+        custom_controllers={5: PID(90.0,
+            Kp_plus=6.0, Kp_minus=12.0,
+            Ki=0.1
+        )}
+    )
+    for t in range(c.horizon):
+        env.step()
+
+if __name__ == '__main__':
+    # ~ pid_short_leash()
+    pid_long_leash()
