@@ -89,10 +89,10 @@ class PID(ControlLogic):
     ) -> float:
         error: float = distance_to_next_vehicle - self.target_distance
         self.error_accum.append(error)
-        print(f"error = {error}")
-        print(f"error_accum_sum = {sum(self.error_accum)}")
-        if self.steps % 150 == 0:
-            self.error_accum.clear()
+        # ~ print(f"error = {error}")
+        # ~ print(f"error_accum_sum = {sum(self.error_accum)}")
+        # ~ if self.steps % 75 == 0:
+            # ~ self.error_accum.clear()
         p_term: float
         if error > 0:
             p_term = self.Kp_plus * error
@@ -115,11 +115,6 @@ class RingEnv:
         # Number of steps already executed
         self.steps: int = 0
         # self.tc.simulation.getCurrentTime() is useful for getting current simulation time
-
-        self.init_vehicles()
-
-        self.tc.simulationStep()
-        self.steps += 1
 
     def def_sumo(self):
         c = self.c
@@ -189,6 +184,11 @@ class RingEnv:
                 self.veh_controllers[veh_id] = CustomIDM(self.idm_params)
         assert curr == c.n_veh
 
+        # TODO: is this initial stepping necessary?
+        # Seems like the simulation performs fine without it.
+        self.tc.simulationStep()
+        self.steps += 1
+
     def step(self) -> None:
         c = self.c
 
@@ -253,5 +253,6 @@ if __name__ == '__main__':
         custom_update=True
     ).var(**from_args())
     env = RingEnv(c)
+    env.init_vehicles()
     for t in range(c.horizon):
         env.step()
