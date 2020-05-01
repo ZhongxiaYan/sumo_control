@@ -145,7 +145,7 @@ class NonConvexOptLogic:
 
         # spacing constraint
         prog.AddLinearConstraint(ge(flat(s[1:]), s0))
-        prog.AddLinearConstraint(le(flat(s[1:]), 10)) # extra constraint to help solver
+        prog.AddLinearConstraint(le(flat(s[1:]), sf * 2)) # extra constraint to help solver
         prog.AddLinearConstraint(eq(flat(s[1:].sum(axis=1)), L - L_veh * n_veh))
 
         # spacing update constraint
@@ -369,7 +369,7 @@ class RingEnv:
         print()
         self.tc.simulationStep()
         # handle the fact that SUMO doesn't move the vehicles exactly as we predict
-        if c.custom_move:
+        if c.get('custom_move', False):
             for veh in vehs:
                 new_speed = veh.speed + veh.accel * c.sim_step
                 pos = veh.pos + (veh.speed + new_speed) / 2 * c.sim_step
@@ -527,7 +527,7 @@ def silly_controller() -> None:
 
 if __name__ == '__main__':
     # baseline()
-    # ~ pid_short_leash()
-    # ~ pid_long_leash()
+    # pid_short_leash()
+    # pid_long_leash()
     # silly_controller()
     nonconvex_opt()
