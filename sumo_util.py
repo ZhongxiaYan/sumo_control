@@ -177,8 +177,10 @@ WHITE = (255, 255, 255)
 CYAN = (0, 255, 255)
 RED = (255, 0, 0)
 
-# ~ COLLISION = Namespace(teleport='teleport', warn='warn', none='none', remove='remove')
-COLLISION = Namespace(teleport='none', warn='warn', none='none', remove='none')
+# Crash upon vehicle crash
+COLLISION = Namespace(teleport='teleport', warn='warn', none='none', remove='remove')
+# Don't crash upon vehicle crash
+# ~ COLLISION = Namespace(teleport='none', warn='warn', none='none', remove='none')
 
 class SumoDef:
     no_ns_attr = '{%s}noNamespaceSchemaLocation' % E.xsi
