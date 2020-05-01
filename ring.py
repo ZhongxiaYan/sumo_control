@@ -308,6 +308,44 @@ def pid_long_leash() -> None:
     for t in range(c.horizon):
         env.step()
 
+def silly_controller() -> None:
+    """
+    Run a silly controller.
+    """
+    c = Namespace(
+        res=Path('tmp'),
+        horizon=3000,
+
+        n_veh=10,
+        circumference=250,
+        sim_step=0.25,
+        render=True,
+
+        custom_update=True
+    ).var(**from_args())
+    env = RingEnv(c)
+    class Silly(ControlLogic):
+        def step_logic(self,
+            distance_to_next_vehicle: float,
+            this_speed: float,
+            next_speed: float
+        ) -> float:
+            print(f"distance_to_next_vehicle = {distance_to_next_vehicle}")
+            if distance_to_next_vehicle < 60:
+                if self.steps % 40 < 20:
+                    return 0.2
+                else:
+                    return -0.212
+            else:
+                return 0.6
+    env.init_vehicles(
+        highlights={5},
+        custom_controllers={5: Silly()}
+    )
+    for t in range(c.horizon):
+        env.step()
+
 if __name__ == '__main__':
     # ~ pid_short_leash()
-    pid_long_leash()
+    # ~ pid_long_leash()
+    silly_controller()
