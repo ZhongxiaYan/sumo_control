@@ -76,8 +76,9 @@ class NonConvexOptLogic:
     def __init__(self, c, idm_params):
         self.c = c
         self.p = idm_params
-        self.plan = None
-        self.plan_index = None
+        self.plan = []
+        self.plan_index = 0
+        self.idm_backup = CustomIDM(idm_params)
 
     def optimize(self, vehs):
         c = self.c
@@ -99,11 +100,9 @@ class NonConvexOptLogic:
         print(f'Current spacings {s_init}')
 
         # can still follow current plan
-        if self.plan is not None:
+        if self.plan_index < len(self.plan):
             accel = self.plan[self.plan_index]
-            self.plan_index = self.plan_index + 1
-            if self.plan_index == c.n_opt:
-                self.plan = None
+            self.plan_index += 1
             return accel
 
         print(f'Optimizing trajectory for {c.n_opt} steps')
@@ -169,12 +168,18 @@ class NonConvexOptLogic:
             (v_np1 - v_n - dt * a * (1 - (v_n / v0) ** delta)) * s_n ** 2,
             -dt * a * (s0 + v_n * T + v_n * (v_n - v_n_im1) / (2 * np.sqrt(a * b))) ** 2))
 
-        prog.AddCost(((v - vf) ** 2).mean() + ((s - sf) ** 2).mean())
+        if c.cost == 'mean':
+            prog.AddCost(-v.mean())
+        elif c.cost == 'target':
+            prog.AddCost(((v - vf) ** 2).mean() + ((s - sf) ** 2).mean())
 
         solver = SnoptSolver()
         result = solver.Solve(prog)
 
-        assert result.is_success()
+        if not result.is_success():
+            accel = self.idm_backup.step(s_init[0], v_init[0], v_init[-1])
+            print(f'Optimization failed, using accel {accel} from IDM')
+            return accel
 
         v_desired = result.GetSolution(v)
         print('Planned speeds')
@@ -367,12 +372,15 @@ class RingEnv:
         print('speeds', ' '.join(('%.3g' % speed) for speed in sorted(speeds)))
         print('mean %.5g min %.5g max %.5g' % (np.mean(speeds), np.min(speeds), np.max(speeds)))
         print()
-        self.tc.simulationStep()
         # handle the fact that SUMO doesn't move the vehicles exactly as we predict
         if c.get('custom_move', False):
             for veh in vehs:
-                new_speed = veh.speed + veh.accel * c.sim_step
-                pos = veh.pos + (veh.speed + new_speed) / 2 * c.sim_step
+                veh.new_speed = max(0, veh.speed + veh.accel * c.sim_step)
+                vehicle.setSpeed(veh.id, veh.new_speed)
+        self.tc.simulationStep()
+        if c.get('custom_move', False):
+            for veh in vehs:
+                pos = veh.pos + (veh.speed + veh.new_speed) / 2 * c.sim_step
                 if pos > c.circumference:
                     pos -= c.circumference
                 if pos >= c.circumference / 2:
@@ -382,7 +390,6 @@ class RingEnv:
                     lane_pos = pos
                     lane = 'right_0'
                 vehicle.moveTo(veh.id, lane, lane_pos)
-                vehicle.setSpeed(veh.id, max(0, new_speed))
         self.steps += 1
 
 def baseline() -> None:
@@ -416,7 +423,7 @@ def nonconvex_opt() -> None:
 
         n_veh=8,
         circumference=80,
-        sim_step=1,
+        sim_step=0.5,
         render=True,
 
         custom_update=True,
@@ -424,6 +431,7 @@ def nonconvex_opt() -> None:
         n_opt=5,
         dt=1,
         u_max=1,
+        cost='target'
     ).var(**from_args())
     env = RingEnv(c)
     env.init_vehicles(
