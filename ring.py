@@ -72,6 +72,120 @@ class CustomIDM(ControlLogic):
         s_star = self.params.s0 + this_speed * self.params.tau + this_speed * v_diff / (2 * np.sqrt(self.params.a * self.params.b))
         return self.params.a * (1 - (this_speed / self.params.v0) ** self.params.delta - (s_star / s) ** 2)
 
+class NonConvexOptLogic:
+    def __init__(self, c, idm_params):
+        self.c = c
+        self.p = idm_params
+        self.plan = None
+        self.plan_index = None
+
+    def optimize(self, vehs):
+        c = self.c
+        p = self.p
+
+        n_veh, L, N, dt, u_max = c.n_veh, c.circumference, c.n_opt, c.sim_step, c.u_max
+        L_veh = vehs[0].length
+        a, b, s0, T, v0, delta = p.a, p.b, p.s0, p.tau, p.v0, p.delta
+
+        vehs = vehs[::-1]
+        np.set_printoptions(linewidth=100)
+        # the controlled vehicle is now the first vehicle, positions are sorted from largest to smallest
+        print(f'Current positions {[veh.pos for veh in vehs]}')
+        v_init = [veh.speed for veh in vehs]
+        print(f'Current speeds {v_init}')
+        # spacing
+        s_init = [vehs[-1].pos - vehs[0].pos - L_veh] + [veh_im1.pos - veh_i.pos - L_veh for veh_im1, veh_i in zip(vehs[:-1], vehs[1:])]
+        s_init = [s + L if s < 0 else s for s in s_init] # handle wrap
+        print(f'Current spacings {s_init}')
+
+        # can still follow current plan
+        if self.plan is not None:
+            accel = self.plan[self.plan_index]
+            self.plan_index = self.plan_index + 1
+            if self.plan_index == c.n_opt:
+                self.plan = None
+            return accel
+
+        print(f'Optimizing trajectory for {c.n_opt} steps')
+
+        ## solve for equilibrium conditions (when all vehicles have same spacing and going at optimal speed)
+        import scipy.optimize
+        sf = L / n_veh - L_veh # equilibrium space
+        accel_fn = lambda v: a * (1 - (v / v0) ** delta - ((s0 + v * T) / sf) ** 2)
+        sol = scipy.optimize.root(accel_fn, 0)
+        vf = sol.x.item() # equilibrium speed
+        sstarf = s0 + vf * T
+        print('Equilibrium speed', vf)
+
+        # nonconvex optimization
+        from pydrake.all import MathematicalProgram, SnoptSolver, eq, le, ge
+
+        # get guesses for solutions
+        v_guess = [np.mean(v_init)]
+        for _ in range(N):
+            v_guess.append(dt * accel_fn(v_guess[-1]))
+        s_guess = [sf] * (N + 1)
+
+        prog = MathematicalProgram()
+        v = prog.NewContinuousVariables(N + 1, n_veh, 'v') # speed
+        s = prog.NewContinuousVariables(N + 1, n_veh, 's') # spacing
+        flat = lambda x: x.reshape(-1)
+
+        # Guess
+        prog.SetInitialGuess(s, np.stack([s_guess] * n_veh, axis=1))
+        prog.SetInitialGuess(v, np.stack([v_guess] * n_veh, axis=1))
+
+        # initial conditions constraint
+        prog.AddLinearConstraint(eq(v[0], v_init))
+        prog.AddLinearConstraint(eq(s[0], s_init))
+
+        # velocity constraint
+        prog.AddLinearConstraint(ge(flat(v[1:]), 0))
+        prog.AddLinearConstraint(le(flat(v[1:]), vf + 1)) # extra constraint to help solver
+
+        # spacing constraint
+        prog.AddLinearConstraint(ge(flat(s[1:]), s0))
+        prog.AddLinearConstraint(le(flat(s[1:]), 10)) # extra constraint to help solver
+        prog.AddLinearConstraint(eq(flat(s[1:].sum(axis=1)), L - L_veh * n_veh))
+
+        # spacing update constraint
+        s_n = s[:-1, 1:]       # s_i[n]
+        s_np1 = s[1:, 1:]      # s_i[n + 1]
+        v_n = v[:-1, 1:]       # v_i[n]
+        v_np1 = v[1:, 1:]      # v_i[n + 1]
+        v_n_im1 = v[:-1, :-1]  # v_{i - 1}[n]
+        v_np1_im1 = v[1:, :-1] # v_{i - 1}[n + 1]
+        prog.AddLinearConstraint(eq(
+            flat(s_np1 - s_n), flat(0.5 * dt * (v_n_im1 + v_np1_im1 - v_n - v_np1))))
+        # handle position wrap for vehicle 1
+        prog.AddLinearConstraint(eq(s[1:, 0] - s[:-1, 0], 0.5 * dt * (v[:-1, -1] + v[1:, -1] - v[:-1, 0] - v[1:, 0])))
+
+        # vehicle 0's action constraint
+        prog.AddLinearConstraint(ge(v[1:, 0], v[:-1, 0] - u_max * dt))
+        prog.AddLinearConstraint(le(v[1:, 0], v[:-1, 0] + u_max * dt))
+
+        # idm constraint
+        prog.AddConstraint(eq(
+            (v_np1 - v_n - dt * a * (1 - (v_n / v0) ** delta)) * s_n ** 2,
+            -dt * a * (s0 + v_n * T + v_n * (v_n - v_n_im1) / (2 * np.sqrt(a * b))) ** 2))
+
+        prog.AddCost(((v - vf) ** 2).mean() + ((s - sf) ** 2).mean())
+
+        solver = SnoptSolver()
+        result = solver.Solve(prog)
+
+        assert result.is_success()
+
+        v_desired = result.GetSolution(v)
+        print('Planned speeds')
+        print(v_desired)
+        print('Planned spacings')
+        print(result.GetSolution(s))
+        a_desired = (v_desired[1:, 0] - v_desired[:-1, 0]) / dt # we're optimizing the velocity of the 0th vehicle
+        self.plan = a_desired
+        self.plan_index = 1
+        return self.plan[0]
+
 class PID(ControlLogic):
     def __init__(self, target_distance: float, Kp_plus: float, Kp_minus: float, Ki: float = 0.0) -> None:
         super().__init__()
@@ -146,7 +260,7 @@ class RingEnv:
             s0=v_params['minGap'],
             tau=v_params['tau'],
             v0=v_params['maxSpeed'],
-            delta=c.get('delta', 4)
+            delta=4
         )
 
         additional = E('additional',
@@ -184,7 +298,7 @@ class RingEnv:
 
                 self.tc.vehicle.add(veh_id, f'{route}',
                     typeID='idm',
-                    departPos=str(max(0, curr * interval - offset + np.random.normal(0, 1))),
+                    departPos=str(max(0, np.random.normal(curr * interval - offset, 1))),
                     departSpeed='0')
 
                 # disable sumo checks
@@ -232,25 +346,43 @@ class RingEnv:
                     distance_to_next_vehicle += c.circumference
 
                 # Compute output acceleration
-                veh.accel = self.veh_controllers[veh.id].step(
-                    distance_to_next_vehicle=distance_to_next_vehicle,
-                    this_speed=veh.speed,
-                    next_speed=next_veh.speed
-                )
+                if isinstance(self.veh_controllers[veh.id], ControlLogic):
+                    veh.accel = self.veh_controllers[veh.id].step(
+                        distance_to_next_vehicle=distance_to_next_vehicle,
+                        this_speed=veh.speed,
+                        next_speed=next_veh.speed
+                    )
+                else:
+                    veh.accel = self.veh_controllers[veh.id].optimize(vehs)
 
                 # Highlight this vehicle if needed
                 if veh.id in self.veh_highlights:
-                    self.tc.vehicle.highlight(veh.id, color=(255, 111, 0, 200), size=4)
+                    self.tc.vehicle.setColor(veh.id, color=(255, 111, 0, 200))
 
                 # verified that setSpeed sets speed immediately, slowDown linearly decelerates vehicle over duration
                 vehicle.slowDown(veh.id, max(0, veh.speed + c.sim_step * veh.accel), duration=c.sim_step)
 
         speeds = [veh.speed for veh in vehs]
-        print('Speed')
-        print(' '.join(('%.2g' % speed) for speed in sorted(speeds)))
+        print('step', self.steps)
+        print('speeds', ' '.join(('%.3g' % speed) for speed in sorted(speeds)))
         print('mean %.5g min %.5g max %.5g' % (np.mean(speeds), np.min(speeds), np.max(speeds)))
         print()
         self.tc.simulationStep()
+        # handle the fact that SUMO doesn't move the vehicles exactly as we predict
+        if c.custom_move:
+            for veh in vehs:
+                new_speed = veh.speed + veh.accel * c.sim_step
+                pos = veh.pos + (veh.speed + new_speed) / 2 * c.sim_step
+                if pos > c.circumference:
+                    pos -= c.circumference
+                if pos >= c.circumference / 2:
+                    lane_pos = pos - c.circumference / 2
+                    lane = 'left_0'
+                else:
+                    lane_pos = pos
+                    lane = 'right_0'
+                vehicle.moveTo(veh.id, lane, lane_pos)
+                vehicle.setSpeed(veh.id, max(0, new_speed))
         self.steps += 1
 
 def baseline() -> None:
@@ -266,12 +398,37 @@ def baseline() -> None:
         sim_step=0.25,
         render=True,
 
-        custom_update=True
+        custom_update=True,
+        custom_move=True,
     ).var(**from_args())
     env = RingEnv(c)
     env.init_vehicles(
         highlights={},
         custom_controllers={}
+    )
+    for t in range(c.horizon):
+        env.step()
+
+def nonconvex_opt() -> None:
+    c = Namespace(
+        res=Path('tmp'),
+        horizon=3000,
+
+        n_veh=8,
+        circumference=80,
+        sim_step=1,
+        render=True,
+
+        custom_update=True,
+        custom_move=True,
+        n_opt=5,
+        dt=1,
+        u_max=1,
+    ).var(**from_args())
+    env = RingEnv(c)
+    env.init_vehicles(
+        highlights={c.n_veh},
+        custom_controllers={c.n_veh: NonConvexOptLogic(c, env.idm_params)} # Always control the last vehicle
     )
     for t in range(c.horizon):
         env.step()
@@ -369,7 +526,8 @@ def silly_controller() -> None:
         env.step()
 
 if __name__ == '__main__':
-    # ~ baseline()
+    # baseline()
     # ~ pid_short_leash()
     # ~ pid_long_leash()
-    silly_controller()
+    # silly_controller()
+    nonconvex_opt()
