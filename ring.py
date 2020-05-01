@@ -253,6 +253,29 @@ class RingEnv:
         self.tc.simulationStep()
         self.steps += 1
 
+def baseline() -> None:
+    """
+    Do a baseline run (all IDM).
+    """
+    c = Namespace(
+        res=Path('tmp'),
+        horizon=3000,
+
+        n_veh=10,
+        circumference=250,
+        sim_step=0.25,
+        render=True,
+
+        custom_update=True
+    ).var(**from_args())
+    env = RingEnv(c)
+    env.init_vehicles(
+        highlights={},
+        custom_controllers={}
+    )
+    for t in range(c.horizon):
+        env.step()
+
 def pid_short_leash() -> None:
     """
     Run a PID loop, following closely.
@@ -346,6 +369,7 @@ def silly_controller() -> None:
         env.step()
 
 if __name__ == '__main__':
+    # ~ baseline()
     # ~ pid_short_leash()
     # ~ pid_long_leash()
     silly_controller()
