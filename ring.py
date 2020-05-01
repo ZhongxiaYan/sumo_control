@@ -146,7 +146,7 @@ class RingEnv:
             s0=v_params['minGap'],
             tau=v_params['tau'],
             v0=v_params['maxSpeed'],
-            delta=4.0
+            delta=c.get('delta', 4)
         )
 
         additional = E('additional',
