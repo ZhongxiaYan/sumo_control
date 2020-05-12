@@ -234,6 +234,8 @@ class RingEnv:
         # Number of steps already executed
         self.steps: int = 0
         # self.tc.simulation.getCurrentTime() is useful for getting current simulation time
+        self.history = []
+        self.start_time = time()
 
     def def_sumo(self):
         c = self.c
@@ -367,6 +369,8 @@ class RingEnv:
                 # verified that setSpeed sets speed immediately, slowDown linearly decelerates vehicle over duration
                 vehicle.slowDown(veh.id, max(0, veh.speed + c.sim_step * veh.accel), duration=c.sim_step)
 
+        self.history.append(dict(time=time() - self.start_time, vehs=[dict(speed=veh.speed, pos=veh.pos, accel=veh.get('accel')) for veh in vehs]))
+
         speeds = [veh.speed for veh in vehs]
         print('step', self.steps)
         print('speeds', ' '.join(('%.3g' % speed) for speed in sorted(speeds)))
@@ -398,16 +402,17 @@ def baseline() -> None:
     """
     c = Namespace(
         res=Path('tmp'),
-        horizon=3000,
+        horizon=500,
 
-        n_veh=10,
-        circumference=250,
-        sim_step=0.25,
+        n_veh=8,
+        circumference=80,
+        sim_step=0.5,
         render=True,
 
         custom_update=True,
-        custom_move=True,
+        custom_move=True
     ).var(**from_args())
+
     env = RingEnv(c)
     env.init_vehicles(
         highlights={},
@@ -415,11 +420,15 @@ def baseline() -> None:
     )
     for t in range(c.horizon):
         env.step()
+    c.history_path = Path(f'experiments/circ{c.circumference}_veh{c.n_veh}_step{c.sim_step}_baseline.json')
+    c.history_path._up.mk()
+    c.history_path.save(env.history)
+    print(f'Saved history at step {len(env.history)} to {c.history_path}')
 
 def nonconvex_opt() -> None:
     c = Namespace(
         res=Path('tmp'),
-        horizon=3000,
+        horizon=500,
 
         n_veh=8,
         circumference=80,
@@ -429,10 +438,10 @@ def nonconvex_opt() -> None:
         custom_update=True,
         custom_move=True,
         n_opt=5,
-        dt=1,
         u_max=1,
         cost='target'
     ).var(**from_args())
+
     env = RingEnv(c)
     env.init_vehicles(
         highlights={c.n_veh},
@@ -440,6 +449,10 @@ def nonconvex_opt() -> None:
     )
     for t in range(c.horizon):
         env.step()
+    c.history_path = Path(f'experiments/circ{c.circumference}_veh{c.n_veh}_step{c.sim_step}_opt{c.n_opt}_cost{c.cost}.json')
+    c.history_path._up.mk()
+    c.history_path.save(env.history)
+    print(f'Saved history at step {len(env.history)} to {c.history_path}')
 
 def pid_short_leash() -> None:
     """
