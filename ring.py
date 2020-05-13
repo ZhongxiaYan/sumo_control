@@ -396,6 +396,12 @@ class RingEnv:
                 vehicle.moveTo(veh.id, lane, lane_pos)
         self.steps += 1
 
+common_settings: Dict[str, float] = {
+    'n_veh': 8,
+    'circumference': 80,
+    'sim_step': 0.5
+}
+
 def baseline() -> None:
     """
     Do a baseline run (all IDM).
@@ -404,18 +410,15 @@ def baseline() -> None:
         res=Path('tmp'),
         horizon=500,
 
-        n_veh=8,
-        circumference=80,
-        sim_step=0.5,
         render=True,
 
         custom_update=True,
         custom_move=True
-    ).var(**from_args())
+    ).var(**from_args()).var(**common_settings)
 
     env = RingEnv(c)
     env.init_vehicles(
-        highlights={},
+        highlights=set(),
         custom_controllers={}
     )
     for t in range(c.horizon):
@@ -430,9 +433,6 @@ def nonconvex_opt() -> None:
         res=Path('tmp'),
         horizon=500,
 
-        n_veh=8,
-        circumference=80,
-        sim_step=0.5,
         render=True,
 
         custom_update=True,
@@ -440,7 +440,7 @@ def nonconvex_opt() -> None:
         n_opt=5,
         u_max=1,
         cost='target'
-    ).var(**from_args())
+    ).var(**from_args()).var(**common_settings)
 
     env = RingEnv(c)
     env.init_vehicles(
@@ -462,13 +462,10 @@ def pid_short_leash() -> None:
         res=Path('tmp'),
         horizon=3000,
 
-        n_veh=10,
-        circumference=250,
-        sim_step=0.25,
         render=True,
 
         custom_update=True
-    ).var(**from_args())
+    ).var(**from_args()).var(**common_settings)
     env = RingEnv(c)
     env.init_vehicles(
         highlights={5},
@@ -491,13 +488,10 @@ def pid_long_leash() -> None:
         res=Path('tmp'),
         horizon=3000,
 
-        n_veh=10,
-        circumference=250,
-        sim_step=0.25,
         render=True,
 
         custom_update=True
-    ).var(**from_args())
+    ).var(**from_args()).var(**common_settings)
     env = RingEnv(c)
     env.init_vehicles(
         highlights={5},
@@ -517,13 +511,10 @@ def silly_controller() -> None:
         res=Path('tmp'),
         horizon=3000,
 
-        n_veh=10,
-        circumference=250,
-        sim_step=0.25,
         render=True,
 
         custom_update=True
-    ).var(**from_args())
+    ).var(**from_args()).var(**common_settings)
     env = RingEnv(c)
     class Silly(ControlLogic):
         def step_logic(self,
