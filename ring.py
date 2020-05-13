@@ -27,6 +27,12 @@ class ControlLogic(ABC):
     def __init__(self) -> None:
         self.steps: int = 0
 
+    def _pass_vehs(self, vehs: List) -> None:
+        """
+        Helper function for certain types of optiimzations.
+        """
+        return
+
     def step(self,
         distance_to_next_vehicle: float,
         this_speed: float,
@@ -72,13 +78,23 @@ class CustomIDM(ControlLogic):
         s_star = self.params.s0 + this_speed * self.params.tau + this_speed * v_diff / (2 * np.sqrt(self.params.a * self.params.b))
         return self.params.a * (1 - (this_speed / self.params.v0) ** self.params.delta - (s_star / s) ** 2)
 
-class NonConvexOptLogic:
+class NonConvexOptLogic(ControlLogic):
     def __init__(self, c, idm_params):
         self.c = c
         self.p = idm_params
         self.plan = []
         self.plan_index = 0
         self.idm_backup = CustomIDM(idm_params)
+
+    def _pass_vehs(self, vehs: List) -> None:
+        self._vehs = vehs
+
+    def step_logic(self,
+        distance_to_next_vehicle: float,
+        this_speed: float,
+        next_speed: float
+    ) -> float:
+        return self.optimize(self._vehs)
 
     def optimize(self, vehs):
         c = self.c
@@ -234,7 +250,7 @@ class RingEnv:
         # Number of steps already executed
         self.steps: int = 0
         # self.tc.simulation.getCurrentTime() is useful for getting current simulation time
-        self.history = []
+        self.history: List[Dict[str, Any]] = []
         self.start_time = time()
 
     def def_sumo(self):
@@ -353,14 +369,12 @@ class RingEnv:
                     distance_to_next_vehicle += c.circumference
 
                 # Compute output acceleration
-                if isinstance(self.veh_controllers[veh.id], ControlLogic):
-                    veh.accel = self.veh_controllers[veh.id].step(
-                        distance_to_next_vehicle=distance_to_next_vehicle,
-                        this_speed=veh.speed,
-                        next_speed=next_veh.speed
-                    )
-                else:
-                    veh.accel = self.veh_controllers[veh.id].optimize(vehs)
+                self.veh_controllers[veh.id]._pass_vehs(vehs)
+                veh.accel = self.veh_controllers[veh.id].step(
+                    distance_to_next_vehicle=distance_to_next_vehicle,
+                    this_speed=veh.speed,
+                    next_speed=next_veh.speed
+                )
 
                 # Highlight this vehicle if needed
                 if veh.id in self.veh_highlights:
@@ -443,9 +457,10 @@ def nonconvex_opt() -> None:
     ).var(**from_args()).var(**common_settings)
 
     env = RingEnv(c)
+    n_veh = int(c.n_veh)
     env.init_vehicles(
-        highlights={c.n_veh},
-        custom_controllers={c.n_veh: NonConvexOptLogic(c, env.idm_params)} # Always control the last vehicle
+        highlights={n_veh},
+        custom_controllers={n_veh: NonConvexOptLogic(c, env.idm_params)}  # Always control the last vehicle
     )
     for t in range(c.horizon):
         env.step()
