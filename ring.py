@@ -510,9 +510,9 @@ def pid_long_leash() -> None:
     env = RingEnv(c)
     env.init_vehicles(
         highlights={5},
-        custom_controllers={5: PID(90.0,
-            Kp_plus=6.0, Kp_minus=12.0,
-            Ki=0.1
+        custom_controllers={5: PID(22.0,
+            Kp_plus=0.006, Kp_minus=0.1,
+            Ki=0.0 # 0.002
         )}
     )
     for t in range(c.horizon):
