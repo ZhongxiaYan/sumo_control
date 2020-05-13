@@ -80,6 +80,7 @@ class CustomIDM(ControlLogic):
 
 class NonConvexOptLogic(ControlLogic):
     def __init__(self, c, idm_params):
+        super().__init__()
         self.c = c
         self.p = idm_params
         self.plan = []
@@ -570,7 +571,7 @@ def silly_controller(common_settings: CommonSimSettings) -> None:
 
 if __name__ == '__main__':
     # baseline(common_settings)
-    pid_short_leash(common_settings)
+    # pid_short_leash(common_settings)
     # pid_long_leash(common_settings)
     # silly_controller(common_settings)
-    # nonconvex_opt(common_settings)
+    nonconvex_opt(common_settings)
