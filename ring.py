@@ -511,7 +511,7 @@ def pid_long_leash() -> None:
     env.init_vehicles(
         highlights={5},
         custom_controllers={5: PID(22.0,
-            Kp_plus=0.006, Kp_minus=0.1,
+            Kp_plus=0.006, Kp_minus=0.006,
             Ki=0.0 # 0.002
         )}
     )
