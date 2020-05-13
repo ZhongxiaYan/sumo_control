@@ -485,8 +485,8 @@ def pid_short_leash() -> None:
     env.init_vehicles(
         highlights={5},
         # Close following requires very high braking forces
-        custom_controllers={5: PID(9.0,
-            Kp_plus=1.8, Kp_minus=26.5,
+        custom_controllers={5: PID(2.2,
+            Kp_plus=1.6, Kp_minus=85.5,
             # In close following, for some reason, the integral term
             # just builds up and up and causes wild instability later.
             Ki=0.0
