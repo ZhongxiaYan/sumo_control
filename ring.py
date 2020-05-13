@@ -410,13 +410,32 @@ class RingEnv:
                 vehicle.moveTo(veh.id, lane, lane_pos)
         self.steps += 1
 
-common_settings: Dict[str, float] = {
-    'n_veh': 8,
-    'circumference': 80,
-    'sim_step': 0.5
-}
+@dataclass
+class CommonSimSettings:
+    n_veh: int
+    circumference: float
+    sim_step: float
 
-def baseline() -> None:
+    def to_dict(self) -> Dict[str, float]:
+        return {
+            'n_veh': self.n_veh,
+            'circumference': self.circumference,
+            'sim_step': self.sim_step
+        }
+
+common_settings = CommonSimSettings(
+    n_veh = 8,
+    circumference = 80,
+    sim_step = 0.5
+)
+
+def save_history(tag: str, common_settings: CommonSimSettings, history: List[Dict[str, Any]]) -> None:
+    history_path = Path(f'experiments/circ{common_settings.circumference}_veh{common_settings.n_veh}_step{common_settings.sim_step}_{tag}.json')
+    history_path._up.mk()
+    history_path.save(history)
+    print(f'Saved history at step {len(history)} to {history_path}')
+
+def baseline(common_settings: CommonSimSettings) -> None:
     """
     Do a baseline run (all IDM).
     """
@@ -428,7 +447,7 @@ def baseline() -> None:
 
         custom_update=True,
         custom_move=True
-    ).var(**from_args()).var(**common_settings)
+    ).var(**from_args()).var(**common_settings.to_dict())
 
     env = RingEnv(c)
     env.init_vehicles(
@@ -437,12 +456,9 @@ def baseline() -> None:
     )
     for t in range(c.horizon):
         env.step()
-    c.history_path = Path(f'experiments/circ{c.circumference}_veh{c.n_veh}_step{c.sim_step}_baseline.json')
-    c.history_path._up.mk()
-    c.history_path.save(env.history)
-    print(f'Saved history at step {len(env.history)} to {c.history_path}')
+    save_history('baseline', common_settings, env.history)
 
-def nonconvex_opt() -> None:
+def nonconvex_opt(common_settings: CommonSimSettings) -> None:
     c = Namespace(
         res=Path('tmp'),
         horizon=500,
@@ -454,7 +470,7 @@ def nonconvex_opt() -> None:
         n_opt=5,
         u_max=1,
         cost='target'
-    ).var(**from_args()).var(**common_settings)
+    ).var(**from_args()).var(**common_settings.to_dict())
 
     env = RingEnv(c)
     n_veh = int(c.n_veh)
@@ -464,12 +480,9 @@ def nonconvex_opt() -> None:
     )
     for t in range(c.horizon):
         env.step()
-    c.history_path = Path(f'experiments/circ{c.circumference}_veh{c.n_veh}_step{c.sim_step}_opt{c.n_opt}_cost{c.cost}.json')
-    c.history_path._up.mk()
-    c.history_path.save(env.history)
-    print(f'Saved history at step {len(env.history)} to {c.history_path}')
+    save_history(f'opt{c.n_opt}', common_settings, env.history)
 
-def pid_short_leash() -> None:
+def pid_short_leash(common_settings: CommonSimSettings) -> None:
     """
     Run a PID loop, following closely.
     """
@@ -480,7 +493,7 @@ def pid_short_leash() -> None:
         render=True,
 
         custom_update=True
-    ).var(**from_args()).var(**common_settings)
+    ).var(**from_args()).var(**common_settings.to_dict())
     env = RingEnv(c)
     env.init_vehicles(
         highlights={5},
@@ -494,8 +507,9 @@ def pid_short_leash() -> None:
     )
     for t in range(c.horizon):
         env.step()
+    save_history('pid_short_leash', common_settings, env.history)
 
-def pid_long_leash() -> None:
+def pid_long_leash(common_settings: CommonSimSettings) -> None:
     """
     Run a PID loop, following with longer distance.
     """
@@ -506,7 +520,7 @@ def pid_long_leash() -> None:
         render=True,
 
         custom_update=True
-    ).var(**from_args()).var(**common_settings)
+    ).var(**from_args()).var(**common_settings.to_dict())
     env = RingEnv(c)
     env.init_vehicles(
         highlights={5},
@@ -517,8 +531,9 @@ def pid_long_leash() -> None:
     )
     for t in range(c.horizon):
         env.step()
+    save_history('pid_long_leash', common_settings, env.history)
 
-def silly_controller() -> None:
+def silly_controller(common_settings: CommonSimSettings) -> None:
     """
     Run a silly controller.
     """
@@ -529,7 +544,7 @@ def silly_controller() -> None:
         render=True,
 
         custom_update=True
-    ).var(**from_args()).var(**common_settings)
+    ).var(**from_args()).var(**common_settings.to_dict())
     env = RingEnv(c)
     class Silly(ControlLogic):
         def step_logic(self,
@@ -551,10 +566,11 @@ def silly_controller() -> None:
     )
     for t in range(c.horizon):
         env.step()
+    save_history('silly_controller', common_settings, env.history)
 
 if __name__ == '__main__':
-    # baseline()
-    # pid_short_leash()
-    # pid_long_leash()
-    # silly_controller()
-    nonconvex_opt()
+    # baseline(common_settings)
+    pid_short_leash(common_settings)
+    # pid_long_leash(common_settings)
+    # silly_controller(common_settings)
+    # nonconvex_opt(common_settings)
